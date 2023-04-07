@@ -4,28 +4,28 @@ import cv2
 
 
 
-class Codebook:
+class CodeBook:
     """
-    FRAME_PER_RELOCATION    : int   every # frames, __relocate codeword's order
-    MNRL_LIM                : int   every background codeword should recur at least every {MNRL_LIM} frames.
+    FRAME_PER_RELOCATION    : int   every # frames, __relocate CodeWord's order
+    MNRL_LIM                : int   every background CodeWord should recur at least every {MNRL_LIM} frames.
     """
 
     FRAME_PER_RELOCATION: int
     MNRL_LIM: int
 
     def __init__(self, training_frame: int, fpr: int = 20) -> None:
-        self.cd_list: list[Codeword] = []
+        self.cd_list: list[CodeWord] = []
         self.training_frame = training_frame
-        Codebook.MNRL_LIM = int(training_frame * 0.5)
-        Codebook.FRAME_PER_RELOCATION = fpr
+        CodeBook.MNRL_LIM = int(training_frame * 0.5)
+        CodeBook.FRAME_PER_RELOCATION = fpr
         
     def training(self, seg: np.ndarray, t: int) -> None:  # State: Finish. Need Unit Test
         if not len(self.cd_list) :
-            cwd = Codeword(seg, t)
+            cwd = CodeWord(seg, t)
             self.cd_list.append(cwd)
             return
 
-        if t % Codebook.FRAME_PER_RELOCATION == 0:
+        if t % CodeBook.FRAME_PER_RELOCATION == 0:
             self.__relocate()
 
         row, col, _ = seg.shape
@@ -47,7 +47,7 @@ class Codebook:
         if np.any(
             waiting_for_check
         ):  # ? waiting_for_check 如果存在一個 True (需要創建新的Cwd)，就創建一個新的
-            new_cwd = Codeword(seg, t, waiting_for_check)
+            new_cwd = CodeWord(seg, t, waiting_for_check)
             self.cd_list.append(new_cwd)
 
     
@@ -64,13 +64,13 @@ class Codebook:
 
             # ! 會有Nan > 數字的問題，只要有 NAN 與數字相關的比較，回傳是False
             del_pixel = (
-                self.cd_list[i].mnrl > Codebook.MNRL_LIM
+                self.cd_list[i].mnrl > CodeBook.MNRL_LIM
             )  # * 捨棄MNRL> MNRL_LIM的數值
             bgr_del = np.dstack((del_pixel, del_pixel, del_pixel))
             self.cd_list[i].avg_bgr = np.where(bgr_del, np.NAN, self.cd_list[i].avg_bgr)
             # * 將MNRL大於等於一半total frame 的 pixel 設成 np.NAN
             for attr_nm, value in vars(self.cd_list[i]).items():
-                if attr_nm in Codeword.ARR_2D_SET:
+                if attr_nm in CodeWord.ARR_2D_SET:
                     setattr(
                         self.cd_list[i], attr_nm, np.where(del_pixel, np.NAN, value)
                     )
@@ -95,13 +95,13 @@ class Codebook:
                     bgr_pixel, cwd.avg_bgr, self.cd_list[j].avg_bgr
                 )
 
-                # ? 同時迭代 j codeword 及 j+1 codeword 內部的 public variable。同時迭代時，變數迭代的順序是一樣的。
+                # ? 同時迭代 j CodeWord 及 j+1 CodeWord 內部的 public variable。同時迭代時，變數迭代的順序是一樣的。
                 # ?（avg_bgr -> bri_max -> bri_min -> freq -> mnrl -> first_times -> last_times)
                 # * 將比較freq 較大的，移到cd_list 中 index 較小的位置
                 for (attr_nm1, arr_1), (attr_nm2, arr_2) in zip(
                     vars(self.cd_list[j]).items(), vars(self.cd_list[j + 1]).items()
                 ):
-                    if attr_nm1 == attr_nm2 and attr_nm1 in Codeword.ARR_2D_SET:
+                    if attr_nm1 == attr_nm2 and attr_nm1 in CodeWord.ARR_2D_SET:
                         setattr(
                             self.cd_list[j + 1],
                             attr_nm1,
@@ -123,11 +123,10 @@ class Codebook:
     def __delete_empty_cwd(self) -> int:  # State: Finish. Unit Test Succeed 
         """回傳總共刪了多少"""
         total_num = len(self.cd_list)
-        for i in range(total_num - 1, -1, -1):
+        for i in range(total_num):
             cared_pixel = np.isnan(self.cd_list[i].mnrl)  # * NAN的區域
             if np.all(cared_pixel):  # 全False => 全部都是 NAN
-                del (self.cd_list[i])
-            else:
+                self.cd_list = self.cd_list[:i]
                 break
         return total_num - len(self.cd_list)
 
@@ -158,9 +157,9 @@ class Codebook:
                 except_update)
             
         return potential_fg
-
-
-class Codeword:
+    def get_cb_list(self):
+        return self.cd_list
+class CodeWord:
     """
     parameter ->
     COLOR_TOLERANCE : float32 color distortion tolerance
@@ -171,7 +170,7 @@ class Codeword:
     aux ->
     bri_max             : float32    max brightness
     bri_min             : float32   min brightness
-    freq                : float32      frequency with which the codeword has occurred
+    freq                : float32      frequency with which the CodeWord has occurred
     mnrl                : float32      maximum negative run-length
     first_times           : float32      first access time
     last_times            : float32      min acceess
@@ -193,7 +192,7 @@ class Codeword:
     def __init__(               # State: Finish. (Assume)
         self, seg: np.ndarray, t: int, cared_pixel: np.ndarray = np.array([])
     ) -> None:  
-        """Create codeword in numpy certain element type"""
+        """Create CodeWord in numpy certain element type"""
         row, col, _ = seg.shape
         if cared_pixel.size != 0:
             bgr_cared = np.dstack((cared_pixel, cared_pixel, cared_pixel))
@@ -225,7 +224,7 @@ class Codeword:
     ) -> tuple[
         np.ndarray, np.ndarray, np.ndarray
     ]:  # first: match_pixel  2: 2D brightness lim   3: effective_nan
-        """During training period, examine whether seg belongs to this codeword."""
+        """During training period, examine whether seg belongs to this CodeWord."""
         effective_nan = np.bitwise_and(np.isnan(self.freq), cared_pixel)
         bri = self.__bri_calculate(seg)
 
@@ -248,15 +247,15 @@ class Codeword:
         not_yet_match = np.bitwise_and(cared_pixel, np.bitwise_not(effective_nan))
 
         dist = self.__colordist(seg)
-        bri_low_lim = Codeword.BRI_ALPHA * self.bri_max
+        bri_low_lim = CodeWord.BRI_ALPHA * self.bri_max
 
-        bu1 = Codeword.BRI_BETA * self.bri_max
-        bu2 = self.bri_min / Codeword.BRI_ALPHA
+        bu1 = CodeWord.BRI_BETA * self.bri_max
+        bu2 = self.bri_min / CodeWord.BRI_ALPHA
         bri_up_lim = np.where(bu2 < bu1, bu2, bu1)  # ! True 則回傳 bu2 ， False 則回傳 bu1
 
         matched_pixel = np.bitwise_and(
             np.bitwise_and((bri < bri_up_lim), (bri > bri_low_lim)),
-            np.bitwise_and((dist <= Codeword.COLOR_TOLERANCE), not_yet_match),
+            np.bitwise_and((dist <= CodeWord.COLOR_TOLERANCE), not_yet_match),
         )
         return matched_pixel, effective_nan
 
@@ -292,19 +291,19 @@ class Codeword:
         return np.bitwise_not(matched_pixel)  #  更新過的 element 以外的 element
 
     def test_examine(self, seg: np.ndarray, cared_pixel: np.ndarray) -> tuple[np.ndarray, np.ndarray]:   # ! State: Not Yet
-        """During testing period, examine whether seg belongs to this codeword."""
+        """During testing period, examine whether seg belongs to this CodeWord."""
         dist = self.__colordist(seg)
         bri = self.__bri_calculate(seg)
 
-        bri_low_lim = Codeword.BRI_ALPHA * self.bri_max
+        bri_low_lim = CodeWord.BRI_ALPHA * self.bri_max
 
-        bu1 = Codeword.BRI_BETA * self.bri_max
-        bu2 = self.bri_min / Codeword.BRI_ALPHA
+        bu1 = CodeWord.BRI_BETA * self.bri_max
+        bu2 = self.bri_min / CodeWord.BRI_ALPHA
         bri_up_lim = np.where(bu2 < bu1, bu2, bu1)  
         
         matched_pixel = np.bitwise_and(
             np.bitwise_and((bri < bri_up_lim), (bri > bri_low_lim)),
-            np.bitwise_and((dist < Codeword.COLOR_TOLERANCE), cared_pixel),
+            np.bitwise_and((dist < CodeWord.COLOR_TOLERANCE), cared_pixel),
         )
 
         return matched_pixel
@@ -377,7 +376,7 @@ def recover_image(path:str, num_h: int, num_w: int, t:int ):
     return frame
 
 def capture_video(  # State: Unit test successfully
-    v_pth="/home/sean/Desktop/AIVC/Codebook/highway.mp4",
+    v_pth="/home/sean/Desktop/AIVC/CodeBook/highway.mp4",
 ) -> cv2.VideoCapture:
     """Output : video, total_frame_num , Height, Width"""
     # v_pth = input("Key in the path of the video :")
@@ -390,58 +389,57 @@ def capture_video(  # State: Unit test successfully
     return video, video.get(cv2.CAP_PROP_FRAME_COUNT), video.get(cv2.CAP_PROP_FRAME_HEIGHT), video.get(cv2.CAP_PROP_FRAME_WIDTH)
 
   
-# * Divide and Recovery    
-# if __name__ == "__main__":
-    
-#     video: cv2.VideoCapture = capture_video()
-#     num_frame = video.get(cv2.CAP_PROP_FRAME_COUNT)
-    
-#     path = "."  
-#     height = video.get(cv2.CAP_PROP_FRAME_HEIGHT)
-#     width = video.get(cv2.CAP_PROP_FRAME_WIDTH)
-#     ret, frame = video.read()
 
-#     cv2.imshow("origin", frame)
-#     cv2.waitKey()
-#     divide_frame(frame,".",height, width, 3,3,1)
-    
-    
-#     print(height, width )
-#     after_frame = recover_image(path,3,3,1)
-#     print(np.all(after_frame == frame))
-#     cv2.imshow("diff",after_frame)
-#     cv2.waitKey()
 
+
+def training(CB:CodeBook, part:str):
+    t = time.time()
+    for i in range(0, training_frame.value):
+        # print(i)
+        img = cv2.imread(f"/home/sean/Desktop/AIVC/CodeBook/data/frame:{i}_{part}.jpg")
+        # cv2.imshow("img",img)
+        # cv2.waitKey()
+        CB.training(img, i)
+
+    CB.temporal_filter()
+    print(f"{part} After cd_list: {len(CB.cd_list)}\ncost time: {time.time() - t}")
+    print(f"cost time: {time.time() - t}")
 
 # * Training & Testing Code Book
 if __name__ == "__main__":
-    video, num_frame, height, width = capture_video()
-    CB = Codebook(num_frame)
-    print(f"Total Frame: {num_frame}")
-    print(f"Codeword.BRI_ALPHA = {Codeword.BRI_ALPHA} | Codeword.BRI_ALPHA = {Codeword.BRI_BETA} ")
+    from  multiprocessing.managers import BaseManager, NamespaceProxy
+    import multiprocessing
+
+    from lib.Customized_Multiprocess import register_proxy, ObjProxy, MyManager
+    register_proxy("CodeBook", CodeBook , ObjProxy)
+
+
+    
+    
+    video, total_frame, height, width = capture_video()
+    training_frame = multiprocessing.Value('i', 300)
+    print(f"Total Frame: {training_frame.value}")
+    print(f"CodeWord.BRI_ALPHA = {CodeWord.BRI_ALPHA} | CodeWord.BRI_ALPHA = {CodeWord.BRI_BETA} ")
 
     import time
 
     t = time.time()
-    for i in range(0, int(num_frame)):
-        
-        img = cv2.imread(f"/home/sean/Desktop/AIVC/Codebook/data/frame:{i}_1_3.jpg")
-        
-        # cv2.waitKey()
-        CB.training(img, i)
-    print(f"before cd_list: {len(CB.cd_list)}")
-    CB.temporal_filter()
-    print(f"After cd_list: {len(CB.cd_list)}")
-    print(f"cost time: {time.time() - t}")
+    with MyManager() as manager:
+        # manager.start()
+        CB = CodeBook(training_frame.value)
+        training(CB, "1_1")
 
-    for i in range(0, 554):
-        img = cv2.imread(f"/home/sean/Desktop/AIVC/Codebook/data/frame:{i}_1_3.jpg")
-        cv2.imshow('1_1',img)
-        fg = CB.BGS(img,i)
-        # kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
-        # fg =cv2.morphologyEx(fg.astype(np.uint8),cv2.MORPH_OPEN,kernel, iterations=1)
-        cv2.imshow("1_1 fg", fg.astype(np.uint8)*255)
-        cv2.waitKey(12)
+
+        for i in range(0, 553):
+            img = cv2.imread(f"/home/sean/Desktop/AIVC/CodeBook/data/frame:{i}_1_1.jpg")
+            cv2.imshow('1_1',img)
+            # print(img.shape)
+            fg = CB.BGS(img,i)
+            # kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
+            # fg =cv2.morphologyEx(fg.astype(np.uint8),cv2.MORPH_OPEN,kernel, iterations=1)
+            cv2.imshow("1_1 fg", fg.astype(np.uint8)*255)
+            cv2.waitKey(12)
+        # manager.shutdown()
 
 # if __name__ == "__main__":
 #     import multiprocessing
