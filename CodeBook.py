@@ -159,6 +159,7 @@ class CodeBook:
         return potential_fg
     def get_cb_list(self):
         return self.cd_list
+
 class CodeWord:
     """
     parameter ->
@@ -186,7 +187,7 @@ class CodeWord:
         "last_times",
     )
     COLOR_TOLERANCE = 10.0  # ? NOT CERTAIN NUMBER DESCRIBED
-    BRI_ALPHA = 0.65  # ? between 0.4 and 0.7
+    BRI_ALPHA = 0.5  # ? between 0.4 and 0.7
     BRI_BETA = 1.34  # ? between 1.1 and 1.5
 
     def __init__(               # State: Finish. (Assume)
@@ -339,7 +340,7 @@ class CodeWord:
 
 
 def divide_frame(  # State: Unit test successfully
-    frame: np.ndarray, sv_path: str,  height: int, width: int, num_h: int, num_w: int, t: int
+    frame: np.ndarray,  height: int, width: int, num_h: int, num_w: int
 ):
     """divide the input frame into {num_h}*{num_w} pictures"""
     from os.path import join
@@ -348,24 +349,29 @@ def divide_frame(  # State: Unit test successfully
     module_r = height % num_h
     module_c = width % num_w
     pre_r = 0
+    seg_list= []
     for i in range(1, num_h + 1):
         r = i * step_r if i * step_r != (height - module_r) else height
         pre_c = 0
         for j in range(1, num_w + 1):
             c = j * step_c if j * step_c != (width - module_c) else width
-            # print(f"pre_r: {pre_r} r: {r} | pre_c: {pre_c} c: {c}")
             segment = frame[int(pre_r):int(r), int(pre_c):int(c)]
-            cv2.imwrite(join(sv_path,f"frame:{t}_{i}_{j}.jpg"), segment)
+            seg_list.append(segment)
             pre_c = c
         pre_r = r
-def recover_image(path:str, num_h: int, num_w: int, t:int ):
+    return seg_list
+    
+def recover_image(fgs: list[np.ndarray], num_h: int, num_w: int ):
     from os.path import join
     vstack_list = []
+    fg_idx = 0
+        
     for i in range(1,num_h+1):
-        img = cv2.imread(join(path, f"frame:{t}_{i}_1.jpg"))
+        img = fgs[fg_idx]
+        fg_idx += 1
         for j in range(2,num_w+1):
-            fpth = join(path,f"frame:{t}_{i}_{j}.jpg")
-            var = cv2.imread(fpth)
+            var = fgs[fg_idx]
+            fg_idx += 1
             img = cv2.hconcat((img,var))
         vstack_list.append(img)
     
@@ -376,7 +382,7 @@ def recover_image(path:str, num_h: int, num_w: int, t:int ):
     return frame
 
 def capture_video(  # State: Unit test successfully
-    v_pth="/home/sean/Desktop/AIVC/CodeBook/highway.mp4",
+    v_pth="./highway.mp4",
 ) -> cv2.VideoCapture:
     """Output : video, total_frame_num , Height, Width"""
     # v_pth = input("Key in the path of the video :")
@@ -385,62 +391,51 @@ def capture_video(  # State: Unit test successfully
         video = cv2.VideoCapture(v_pth)
     else:
         video = False
+        exit(0)
 
     return video, video.get(cv2.CAP_PROP_FRAME_COUNT), video.get(cv2.CAP_PROP_FRAME_HEIGHT), video.get(cv2.CAP_PROP_FRAME_WIDTH)
 
-  
-
-
-
-def training(CB:CodeBook, part:str):
-    t = time.time()
-    for i in range(0, training_frame.value):
-        # print(i)
-        img = cv2.imread(f"/home/sean/Desktop/AIVC/CodeBook/data/frame:{i}_{part}.jpg")
-        # cv2.imshow("img",img)
-        # cv2.waitKey()
-        CB.training(img, i)
-
-    CB.temporal_filter()
-    print(f"{part} After cd_list: {len(CB.cd_list)}\ncost time: {time.time() - t}")
-    print(f"cost time: {time.time() - t}")
 
 # * Training & Testing Code Book
 if __name__ == "__main__":
-    from  multiprocessing.managers import BaseManager, NamespaceProxy
-    import multiprocessing
-
-    from lib.Customized_Multiprocess import register_proxy, ObjProxy, MyManager
-    register_proxy("CodeBook", CodeBook , ObjProxy)
-
-
     
+    video, num_frames, height, width = capture_video()
     
-    video, total_frame, height, width = capture_video()
-    training_frame = multiprocessing.Value('i', 300)
-    print(f"Total Frame: {training_frame.value}")
-    print(f"CodeWord.BRI_ALPHA = {CodeWord.BRI_ALPHA} | CodeWord.BRI_ALPHA = {CodeWord.BRI_BETA} ")
+    print(f"Total Frame: {300}")
+    print(f"CodeWord.BRI_ALPHA = {CodeWord.BRI_ALPHA} | CodeWord.BRI_BETA = {CodeWord.BRI_BETA} ")
 
     import time
 
     t = time.time()
-    with MyManager() as manager:
-        # manager.start()
-        CB = CodeBook(training_frame.value)
-        training(CB, "1_1")
+    CBs = [CodeBook(300) for _ in range(6)]      
+    video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    for i in range(300):
 
+        ret, frame = video.read()
+        if not ret:
+            exit(0)
+        seg_list = divide_frame(frame, height, width, 2,3)
+        for k in range(6):
+            CBs[k].training(seg_list[k],i)
 
-        for i in range(0, 553):
-            img = cv2.imread(f"/home/sean/Desktop/AIVC/CodeBook/data/frame:{i}_1_1.jpg")
-            cv2.imshow('1_1',img)
-            # print(img.shape)
-            fg = CB.BGS(img,i)
-            # kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
-            # fg =cv2.morphologyEx(fg.astype(np.uint8),cv2.MORPH_OPEN,kernel, iterations=1)
-            cv2.imshow("1_1 fg", fg.astype(np.uint8)*255)
-            cv2.waitKey(12)
-        # manager.shutdown()
-
-# if __name__ == "__main__":
-#     import multiprocessing
-#     up_lim_cpus =multiprocessing.cpu_count()
+    for i in range(int(num_frames)):
+        ret, frame = video.read()
+        if not ret:
+            break
+        
+        seg_list = divide_frame(frame, height, width, 2,3)
+        
+        fgs = []
+        for k in range(2*3):
+            fgs.append(CBs[k].BGS(seg_list[k],i).astype(np.uint8)*255)
+        fg = recover_image(fgs, 2, 3)
+        
+        cv2.imshow('fg', fg)
+        cv2.imshow('frame',frame)
+        key = cv2.waitKey(3)
+        
+        if key == ord("s"):
+            cv2.imwrite(f"./{i}.jpg", frame)
+            cv2.imwrite(f"./fg_{i}.jpg", fg)
+        elif key == ord("q"):
+            exit()
